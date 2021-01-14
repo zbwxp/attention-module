@@ -5,6 +5,7 @@ import math
 from torch.nn import init
 from .cbam import *
 from .bam import *
+from .DR1 import *
 
 def conv3x3(in_planes, out_planes, stride=1):
     "3x3 convolution with padding"
@@ -118,19 +119,19 @@ class ResNet(nn.Module):
             self.bam3 = BAM(256*block.expansion)
         else:
             self.bam1, self.bam2, self.bam3 = None, None, None
-
         self.layer1 = self._make_layer(block, 64,  layers[0], att_type=att_type)
+        block = Bottleneck_DR1
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2, att_type=att_type)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2, att_type=att_type)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2, att_type=att_type)
 
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
-        init.kaiming_normal(self.fc.weight)
+        init.kaiming_normal_(self.fc.weight)
         for key in self.state_dict():
             if key.split('.')[-1]=="weight":
                 if "conv" in key:
-                    init.kaiming_normal(self.state_dict()[key], mode='fan_out')
+                    init.kaiming_normal_(self.state_dict()[key], mode='fan_out')
                 if "bn" in key:
                     if "SpatialGate" in key:
                         self.state_dict()[key][...] = 0

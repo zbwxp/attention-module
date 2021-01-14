@@ -3,6 +3,7 @@ import os
 import shutil
 import time
 import random
+import logging
 
 import torch
 import torch.nn as nn
@@ -15,6 +16,8 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 from MODELS.model_resnet import *
 from PIL import ImageFile
+
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -45,7 +48,7 @@ parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
 parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
-parser.add_argument('--print-freq', '-p', default=10, type=int,
+parser.add_argument('--print-freq', '-p', default=100, type=int,
                     metavar='N', help='print frequency (default: 10)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
@@ -58,11 +61,33 @@ best_prec1 = 0
 if not os.path.exists('./checkpoints'):
     os.mkdir('./checkpoints')
 
+def get_logger(prefix):
+    logger_name = "main-logger"
+    logger = logging.getLogger(logger_name)
+    savepath = "./checkpoints" + prefix
+    logging.basicConfig(filename=savepath, filemode='a')
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    fmt = "[%(asctime)s %(levelname)s %(filename)s line %(lineno)d %(process)d] %(message)s"
+    handler.setFormatter(logging.Formatter(fmt))
+    logger.addHandler(handler)
+    return logger
+
 def main():
     global args, best_prec1
     global viz, train_lot, test_lot
+
+
     args = parser.parse_args()
+
+    savepath = './checkpoints/' + args.prefix
+
+
+    logging.basicConfig(filename=savepath+'_log.txt', filemode='a', level=logging.INFO)
+
+
     print ("args", args)
+    logging.info("args", args)
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
@@ -83,15 +108,21 @@ def main():
     model = model.cuda()
     print ("model")
     print (model)
+    logging.info("model")
+    logging.info(model)
 
     # get the number of model parameters
     print('Number of model parameters: {}'.format(
+        sum([p.data.nelement() for p in model.parameters()])))
+    logging.info('Number of model parameters: {}'.format(
         sum([p.data.nelement() for p in model.parameters()])))
 
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
+            logging.info("=> loading checkpoint '{}'".format(args.resume))
+
             checkpoint = torch.load(args.resume)
             args.start_epoch = checkpoint['epoch']
             best_prec1 = checkpoint['best_prec1']
@@ -100,15 +131,18 @@ def main():
                 optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
+            logging.info("=> loaded checkpoint '{}' (epoch {})"
+                  .format(args.resume, checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
+            logging.info("=> no checkpoint found at '{}'".format(args.resume))
 
 
     cudnn.benchmark = True
 
     # Data loading code
-    traindir = os.path.join(args.data, 'train')
-    valdir = os.path.join(args.data, 'val')
+    traindir = os.path.join(args.data, 'ILSVRC2012_train')
+    valdir = os.path.join(args.data, 'ILSVRC2012_val')
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
 
@@ -116,7 +150,7 @@ def main():
     # pdb.set_trace()
     val_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
-                transforms.Scale(256),
+                transforms.Resize(256),
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 normalize,
@@ -126,11 +160,11 @@ def main():
     if args.evaluate:
         validate(val_loader, model, criterion, 0)
         return
-
+    size0 = 224
     train_dataset = datasets.ImageFolder(
         traindir,
         transforms.Compose([
-            transforms.RandomSizedCrop(size0),
+            transforms.RandomResizedCrop(size0),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
@@ -163,6 +197,7 @@ def main():
         }, is_best, args.prefix)
 
 
+
 def train(train_loader, model, criterion, optimizer, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -178,7 +213,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # measure data loading time
         data_time.update(time.time() - end)
         
-        target = target.cuda(async=True)
+        target = target.cuda(non_blocking=True)
         input_var = torch.autograd.Variable(input)
         target_var = torch.autograd.Variable(target)
         
@@ -188,7 +223,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         
         # measure accuracy and record loss
         prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
-        losses.update(loss.data[0], input.size(0))
+        losses.update(loss.data.item(), input.size(0))
         top1.update(prec1[0], input.size(0))
         top5.update(prec5[0], input.size(0))
         
@@ -210,6 +245,14 @@ def train(train_loader, model, criterion, optimizer, epoch):
                   'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
                    epoch, i, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
+            logging.info('Epoch: [{0}][{1}/{2}]\t'
+                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                  'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+                epoch, i, len(train_loader), batch_time=batch_time,
+                data_time=data_time, loss=losses, top1=top1, top5=top5))
 
 def validate(val_loader, model, criterion, epoch):
     batch_time = AverageMeter()
@@ -232,7 +275,7 @@ def validate(val_loader, model, criterion, epoch):
         
         # measure accuracy and record loss
         prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
-        losses.update(loss.data[0], input.size(0))
+        losses.update(loss.data.item(), input.size(0))
         top1.update(prec1[0], input.size(0))
         top5.update(prec5[0], input.size(0))
         
@@ -248,9 +291,18 @@ def validate(val_loader, model, criterion, epoch):
                   'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
                    i, len(val_loader), batch_time=batch_time, loss=losses,
                    top1=top1, top5=top5))
+            logging.info('Test: [{0}/{1}]\t'
+                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                  'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+                i, len(val_loader), batch_time=batch_time, loss=losses,
+                top1=top1, top5=top5))
     
     print(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
             .format(top1=top1, top5=top5))
+    logging.info(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
+          .format(top1=top1, top5=top5))
 
     return top1.avg
 
@@ -304,4 +356,5 @@ def accuracy(output, target, topk=(1,)):
 
 
 if __name__ == '__main__':
+
     main()

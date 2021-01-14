@@ -1,0 +1,5 @@
+__pycache__
+checkpoints/
+checkpointsRESNET50_IMAGENET_DR1
+data/
+log.txt
