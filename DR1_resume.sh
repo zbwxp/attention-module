@@ -1,0 +1,1 @@
+python train_imagenet.py    --ngpu 4 --workers 20 --arch resnet --depth 50 --epochs 100 --batch-size 256 --lr 0.1  --att-type DR1  --prefix RESNET50_IMAGENET_DR1 --data ./data/Imagenet  --resume ./checkpoints/RESNET50_IMAGENET_DR1_checkpoint.pth.tar

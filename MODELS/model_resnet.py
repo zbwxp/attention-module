@@ -120,7 +120,10 @@ class ResNet(nn.Module):
         else:
             self.bam1, self.bam2, self.bam3 = None, None, None
         self.layer1 = self._make_layer(block, 64,  layers[0], att_type=att_type)
-        block = Bottleneck_DR1
+        if att_type =='ADR1':
+            block = Bottleneck_ADR1
+        elif att_type =="DR1":
+            block = Bottleneck_DR1_new
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2, att_type=att_type)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2, att_type=att_type)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2, att_type=att_type)
